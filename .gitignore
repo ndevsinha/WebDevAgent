@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*$py.class
+env/
+venv/
+.env
+temp_uploads/
+presentation_assets/
+node_modules/
+build/
+.vscode/
+theta-cable-182605-dc2d6c51cfb8.json
+*.json
+!package.json
+!tsconfig.json
