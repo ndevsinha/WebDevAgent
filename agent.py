@@ -4,13 +4,23 @@ import google.generativeai as genai
 from google.generativeai.types import content_types
 from tools import run_command, write_file, read_file, list_directory, launch_browser, create_presentation
 
-# Load environment variables
+# Load environment variables (for fallback service key)
 load_dotenv()
 
-# The SDK automatically uses Application Default Credentials (ADC)
-# if GOOGLE_APPLICATION_CREDENTIALS is not set, meaning it will
-# naturally pick up the service account attached to the GCP VM/Cloud Run.
-pass
+# --- ADC-First Authentication ---
+# Step 1: Try Application Default Credentials (ADC) — works automatically on GCP VMs/Cloud Run.
+# Step 2: If ADC fails, fall back to the service account JSON key in .env
+try:
+    import google.auth
+    _credentials, _project = google.auth.default()
+    print(f"Auth: Using Application Default Credentials (project: {_project})")
+except Exception:
+    _svc_key = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+    if _svc_key and os.path.exists(_svc_key):
+        print(f"Auth: ADC not found. Falling back to service key: {_svc_key}")
+    else:
+        print("Auth Warning: Neither ADC nor a valid service key found. Authentication may fail.")
+
 
 SYSTEM_PROMPT = """
 You are an expert autonomous web development agent.
