@@ -128,7 +128,7 @@ class WebDevAgentApp(ctk.CTk):
         agent = WebDevAgent()
         initial_log = "System: Initializing WebDev Agent...\n"
         if not agent.is_ready:
-            initial_log += f"System Error: {agent.init_error}\nPlease set GOOGLE_APPLICATION_CREDENTIALS in the .env file.\n"
+            initial_log += f"System Error: {agent.init_error}\nPlease check your GCP ADC setup or API key.\n"
         else:
             initial_log += "System: Agent is ready. What would you like to build today?\n\n"
             

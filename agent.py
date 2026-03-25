@@ -6,14 +6,11 @@ from tools import run_command, write_file, read_file, list_directory, launch_bro
 
 # Load environment variables
 load_dotenv()
-service_account_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
 
-if not service_account_path or not os.path.exists(service_account_path):
-    print("Warning: GOOGLE_APPLICATION_CREDENTIALS not found or file does not exist. Some functions won't work.")
-else:
-    # No explicit genai.configure() is needed when using GOOGLE_APPLICATION_CREDENTIALS
-    # The SDK automatically picks it up from the environment variable.
-    pass
+# The SDK automatically uses Application Default Credentials (ADC)
+# if GOOGLE_APPLICATION_CREDENTIALS is not set, meaning it will
+# naturally pick up the service account attached to the GCP VM/Cloud Run.
+pass
 
 SYSTEM_PROMPT = """
 You are an expert autonomous web development agent.
@@ -114,7 +111,7 @@ class WebDevAgent:
         - {"type": "tool_call", "name": "...", "args": {...}}
         """
         if not self.is_ready:
-            yield {"type": "error", "content": f"Agent is not initialized due to error: {self.init_error}\nPlease check your GOOGLE_APPLICATION_CREDENTIALS in the .env file."}
+            yield {"type": "error", "content": f"Agent is not initialized due to error: {self.init_error}\nPlease check your GCP Authentication (ADC) or API keys."}
             return
             
         try:
