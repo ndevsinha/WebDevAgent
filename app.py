@@ -2,9 +2,25 @@ import customtkinter as ctk
 from customtkinter import filedialog
 import threading
 import os
+import logging
+import traceback
 from PIL import ImageGrab
 import uuid
 from agent import WebDevAgent
+
+# Set up global logging to file for crash diagnostics
+logging.basicConfig(
+    filename='webdev_agent.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+def log_exception(exc_type, exc_value, exc_traceback):
+    """Log unhandled exceptions to file."""
+    logging.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+
+import sys
+sys.excepthook = log_exception
 
 # Basic setup for CustomTkinter
 ctk.set_appearance_mode("dark")
@@ -177,13 +193,17 @@ class WebDevAgentApp(ctk.CTk):
         self.update_thinking_log("System: Switched to " + self.projects[pid]["name"] + "\n")
 
     def append_to_chat(self, text):
+        if not self.winfo_exists(): return
         if not self.current_project_id: return
-        self.projects[self.current_project_id]["log"] += text
-        
-        self.chat_history.configure(state="normal")
-        self.chat_history.insert("end", text)
-        self.chat_history.configure(state="disabled")
-        self.chat_history.see("end")
+        try:
+            self.projects[self.current_project_id]["log"] += text
+            
+            self.chat_history.configure(state="normal")
+            self.chat_history.insert("end", text)
+            self.chat_history.configure(state="disabled")
+            self.chat_history.see("end")
+        except Exception:
+            pass
 
     def handle_paste(self, event):
         """Intercept paste to check for images in the clipboard."""
@@ -300,7 +320,14 @@ class WebDevAgentApp(ctk.CTk):
         active_agent = self.projects[self.current_project_id]["agent"]
         threading.Thread(target=self.process_agent_response, args=(active_agent, msg, files_to_send), daemon=True).start()
 
-    def process_agent_response(self, agent, msg, files_to_send, stream_generator=None):
+    def process_agent_response(self, agent, msg, files_to_send, stream_generator=None, continuation_count=0):
+        # Prevent infinite auto-continuation loops
+        if continuation_count > 10:
+            self.after(0, self.append_to_chat, "\n[System]: Maximum auto-continuation limit reached. Stopping task to prevent infinite loop.\n")
+            self.after(0, self.update_status, "Stopped", False)
+            self.after(0, self.re_enable_input)
+            return
+
         self.after(0, self.update_status, "Agent is thinking...", True)
         if msg:
             self.after(0, self.update_thinking_log, f"\n--- New Turn: {msg[:50]}... ---\n")
@@ -311,6 +338,7 @@ class WebDevAgentApp(ctk.CTk):
                 content_parts = agent.prepare_message_parts(msg, files_to_send)
                 generator = agent.send_message_stream(content_parts)
             except Exception as e:
+                logging.error(f"Error preparing message parts: {traceback.format_exc()}")
                 self.after(0, self.append_to_chat, f"System Error: {str(e)}\n\n")
                 self.after(0, self.update_status, "Error", False)
                 self.after(0, self.re_enable_input)
@@ -329,12 +357,13 @@ class WebDevAgentApp(ctk.CTk):
                     fn_name = event['name']
                     args = event['args']
                     # Pause the generator and show approval UI in Action Center
-                    self.after(0, self.show_approval_ui, agent, fn_name, args, generator)
+                    self.after(0, self.show_approval_ui, agent, fn_name, args, generator, continuation_count)
                     return # Exit this thread; handle_tool_decision will resume
                 elif etype == 'error':
                     error_msg = event.get('content', 'Unknown Agent Error')
                     self.after(0, self.append_to_chat, f"\n[Agent Error: {error_msg}]\n")
                     self.after(0, self.update_thinking_log, f"\n[Error]: {error_msg}\n")
+                    break # Stop processing on error
             
             # If we finish the entire generator without pausing for a tool, we're done with this turn.
             self.after(0, self.append_to_chat, "\n\n")
@@ -343,22 +372,31 @@ class WebDevAgentApp(ctk.CTk):
             self.after(0, self.re_enable_input)
             
         except Exception as e:
+            logging.error(f"Stream Runtime Error: {traceback.format_exc()}")
             self.after(0, self.append_to_chat, f"\n[Stream Runtime Error: {str(e)}]\n\n")
             self.after(0, self.update_status, "Error", False)
             self.after(0, self.re_enable_input)
 
     def update_thinking_log(self, text):
-        self.thinking_log.configure(state="normal")
-        self.thinking_log.insert("end", text)
-        self.thinking_log.configure(state="disabled")
-        self.thinking_log.see("end")
+        if not self.winfo_exists(): return
+        try:
+            self.thinking_log.configure(state="normal")
+            self.thinking_log.insert("end", text)
+            self.thinking_log.configure(state="disabled")
+            self.thinking_log.see("end")
+        except Exception:
+            pass
 
     def update_status(self, text, busy=False):
-        self.status_label.configure(text=f"Status: {text}")
-        if busy:
-            self.progress_bar.start()
-        else:
-            self.progress_bar.stop()
+        if not self.winfo_exists(): return
+        try:
+            self.status_label.configure(text=f"Status: {text}")
+            if busy:
+                self.progress_bar.start()
+            else:
+                self.progress_bar.stop()
+        except Exception:
+            pass
 
     def clear_approval_area(self):
         for widget in self.approval_area.winfo_children():
@@ -366,7 +404,8 @@ class WebDevAgentApp(ctk.CTk):
         self.approval_label = ctk.CTkLabel(self.approval_area, text="No Actions Pending", font=("Arial", 14, "italic"))
         self.approval_label.pack(pady=20)
 
-    def show_approval_ui(self, agent, fn_name, args, generator):
+    def show_approval_ui(self, agent, fn_name, args, generator, continuation_count=0):
+        if not self.winfo_exists(): return
         self.after(0, self.update_status, "Waiting for Approval", False)
         self.clear_approval_area()
         self.approval_label.destroy()
@@ -400,29 +439,30 @@ class WebDevAgentApp(ctk.CTk):
         btn_frame.pack(pady=10)
 
         approve_btn = ctk.CTkButton(btn_frame, text="Approve", fg_color="green", hover_color="darkgreen", width=100,
-                                   command=lambda: self.handle_tool_decision(agent, fn_name, args, True, generator))
+                                   command=lambda: self.handle_tool_decision(agent, fn_name, args, True, generator, continuation_count))
         approve_btn.pack(side="left", padx=10)
 
         reject_btn = ctk.CTkButton(btn_frame, text="Reject", fg_color="red", hover_color="darkred", width=100,
-                                  command=lambda: self.handle_tool_decision(agent, fn_name, args, False, generator))
+                                  command=lambda: self.handle_tool_decision(agent, fn_name, args, False, generator, continuation_count))
         reject_btn.pack(side="left", padx=10)
 
-    def handle_tool_decision(self, agent, fn_name, args, approved, generator):
+    def handle_tool_decision(self, agent, fn_name, args, approved, generator, continuation_count=0):
+        if not self.winfo_exists(): return
         self.clear_approval_area()
         
         if approved:
             self.update_thinking_log(f"\n[USER APPROVED: {fn_name}]\n")
-            threading.Thread(target=self.execute_tool_and_resume, args=(agent, fn_name, args, generator), daemon=True).start()
+            threading.Thread(target=self.execute_tool_and_resume, args=(agent, fn_name, args, generator, continuation_count), daemon=True).start()
         else:
             self.update_thinking_log(f"\n[USER REJECTED: {fn_name}]\n")
             # Start a fresh turn — don't pass the exhausted old generator
             rejection_parts = agent.prepare_message_parts(f"User rejected the tool call '{fn_name}'. Please suggest an alternative approach or ask the user what to do next.", [])
             rejection_generator = agent.send_message_stream(rejection_parts)
             threading.Thread(target=self.process_agent_response,
-                             args=(agent, None, [], rejection_generator),
+                             args=(agent, None, [], rejection_generator, continuation_count),
                              daemon=True).start()
 
-    def execute_tool_and_resume(self, agent, fn_name, args, generator):
+    def execute_tool_and_resume(self, agent, fn_name, args, generator, continuation_count=0):
         self.after(0, self.update_status, "Executing Tool...", True)
         try:
             tool_fn = agent.tool_map.get(fn_name)
@@ -435,14 +475,15 @@ class WebDevAgentApp(ctk.CTk):
             
             # Resume processing the response stream with the tool result
             threading.Thread(target=self.process_agent_response_with_tool, 
-                             args=(agent, fn_name, result, generator), 
+                             args=(agent, fn_name, result, generator, continuation_count), 
                              daemon=True).start()
         except Exception as e:
+            logging.error(f"Tool Execution Error ({fn_name}): {traceback.format_exc()}")
             self.after(0, self.append_to_chat, f"\n[Execution Error: {str(e)}]\n")
             self.after(0, self.update_status, "Error", False)
             self.after(0, self.re_enable_input)
 
-    def process_agent_response_with_tool(self, agent, fn_name, result, generator):
+    def process_agent_response_with_tool(self, agent, fn_name, result, generator, continuation_count=0):
         try:
             new_generator = agent.send_tool_response_stream(fn_name, result)
             
@@ -461,12 +502,13 @@ class WebDevAgentApp(ctk.CTk):
                     issued_tool_call = True
                     fn = event['name']
                     args = event['args']
-                    self.after(0, self.show_approval_ui, agent, fn, args, new_generator)
+                    self.after(0, self.show_approval_ui, agent, fn, args, new_generator, continuation_count)
                     return
                 elif etype == 'error':
                     error_msg = event.get('content', 'Unknown Error')
                     self.after(0, self.append_to_chat, f"\n[Agent Error: {error_msg}]\n")
                     self.after(0, self.update_thinking_log, f"\n[Error]: {error_msg}\n")
+                    break # Stop on error
 
             # If the model responded with only text and no new tool call,
             # check if the task seems complete. If not, auto-prompt to continue.
@@ -479,7 +521,7 @@ class WebDevAgentApp(ctk.CTk):
                     self.after(0, self.update_thinking_log, "\n[Auto-continuing task...]\n")
                     continuation_parts = agent.prepare_message_parts("Continue building the application. What is the next step? Keep going until it is fully complete.", [])
                     continuation_generator = agent.send_message_stream(continuation_parts)
-                    self.process_agent_response(agent, None, [], continuation_generator)
+                    self.process_agent_response(agent, None, [], continuation_generator, continuation_count + 1)
                     return
 
             self.after(0, self.append_to_chat, "\n\n")
@@ -492,10 +534,14 @@ class WebDevAgentApp(ctk.CTk):
             self.after(0, self.re_enable_input)
 
     def re_enable_input(self):
-        self.user_input.configure(state="normal", placeholder_text="Ask the agent to build a React/Django web app with D3.js...")
-        self.send_button.configure(state="normal")
-        self.upload_button.configure(state="normal")
-        self.user_input.focus()
+        if not self.winfo_exists(): return
+        try:
+            self.user_input.configure(state="normal", placeholder_text="Ask the agent to build a React/Django web app with D3.js...")
+            self.send_button.configure(state="normal")
+            self.upload_button.configure(state="normal")
+            self.user_input.focus()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     app = WebDevAgentApp()

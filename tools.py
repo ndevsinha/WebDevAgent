@@ -115,6 +115,21 @@ def list_directory(path: str = ".") -> str:
     except Exception as e:
         return f"Failed to list directory {path}: {str(e)}"
 
+def launch_browser(url: str) -> str:
+    """
+    Opens the specified URL in the default system web browser.
+    Useful for launching the web applications you build (e.g. http://localhost:3000)
+    so the user can see them immediately.
+    """
+    try:
+        # webbrowser.open returns True if successful
+        success = webbrowser.open(url)
+        if success:
+            return f"Successfully launched {url} in the default browser."
+        else:
+            return f"Failed to launch {url}. The browser might not be accessible."
+    except Exception as e:
+        return f"Error launching browser for {url}: {str(e)}"
 
 
 def _hex_to_rgb(hex_color):

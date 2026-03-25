@@ -152,7 +152,10 @@ class WebDevAgent:
                         }
                         return # Stop the generator after resolving and yielding tool_call
         except Exception as e:
-            yield {"type": "error", "content": f"Error communicating with Agent: {str(e)}"}
+            import traceback
+            error_details = traceback.format_exc()
+            yield {"type": "text", "content": f"\n[Internal SDK Error]: {str(e)}\n"}
+            yield {"type": "error", "content": str(e), "traceback": error_details}
             
     def send_tool_response_stream(self, function_name: str, function_response: str):
         """
