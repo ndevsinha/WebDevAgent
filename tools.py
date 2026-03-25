@@ -1,6 +1,12 @@
 import os
 import subprocess
 import difflib
+import webbrowser
+from pptx import Presentation
+from pptx.util import Inches, Pt, Emu
+from pptx.dml.color import RGBColor
+from pptx.util import Inches, Pt
+from pptx.oxml.ns import qn
 
 def get_file_diff(path: str, new_content: str) -> str:
     """
@@ -109,28 +115,7 @@ def list_directory(path: str = ".") -> str:
     except Exception as e:
         return f"Failed to list directory {path}: {str(e)}"
 
-import webbrowser
 
-def launch_browser(url: str) -> str:
-    """
-    Opens the specified URL in the default system web browser.
-    Useful for launching the web applications you build (e.g. http://localhost:3000)
-    so the user can see them immediately.
-    """
-    try:
-        # webbrowser.open returns True if successful
-        success = webbrowser.open(url)
-        if success:
-            return f"Successfully launched {url} in the default browser."
-        else:
-            return f"Failed to launch {url}. The browser might not be accessible."
-    except Exception as e:
-        return f"Error launching browser for {url}: {str(e)}"
-
-from pptx import Presentation
-from pptx.util import Inches, Pt
-from pptx.enum.shapes import MSO_SHAPE
-from pptx.dml.color import RGBColor
 
 def _hex_to_rgb(hex_color):
     hex_color = hex_color.lstrip('#')
@@ -188,14 +173,18 @@ def create_presentation(title: str, slides: list, output_path: str) -> str:
                 
                 body_place = slide.placeholders[1]
                 tf = body_place.text_frame
+                tf.clear()
                 content = s_data.get("content", [])
                 if isinstance(content, list):
                     for i, point in enumerate(content):
-                        p = tf.text = point if i == 0 else tf.add_paragraph()
-                        if i > 0: p.text = point
+                        if i == 0:
+                            p = tf.paragraphs[0]
+                        else:
+                            p = tf.add_paragraph()
+                        p.text = point
                         p.font.color.rgb = _hex_to_rgb(txt_hex)
                 else:
-                    tf.text = str(content)
+                    tf.paragraphs[0].text = str(content)
                     tf.paragraphs[0].font.color.rgb = _hex_to_rgb(txt_hex)
 
             # Add Flow Elements
@@ -206,15 +195,19 @@ def create_presentation(title: str, slides: list, output_path: str) -> str:
                     w, h = elem.get("w", 2), elem.get("h", 1)
                     
                     if etype == "box":
-                        shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(y), Inches(w), Inches(h))
+                        # MSO_SHAPE_TYPE 1 = RECTANGLE
+                        shape = slide.shapes.add_shape(1, Inches(x), Inches(y), Inches(w), Inches(h))
                         shape.text = elem.get("text", "")
                         shape.fill.solid()
-                        shape.fill.fore_color.rgb = _hex_to_rgb(txt_hex) # Contrast
+                        shape.fill.fore_color.rgb = _hex_to_rgb(txt_hex)
                         shape.text_frame.paragraphs[0].font.color.rgb = _hex_to_rgb(bg_hex)
                     elif etype == "arrow":
                         fx, fy = elem.get("from_x", 0), elem.get("from_y", 0)
-                        tx, ty = elem.get("to_x", 0), elem.get("to_y", 0)
-                        slide.shapes.add_connector(MSO_SHAPE.BENT_ARROW, Inches(fx), Inches(fy), Inches(tx), Inches(ty))
+                        tx, ty = elem.get("to_x", 2), elem.get("to_y", 0)
+                        # Use a right-arrow shape instead of a connector for reliability
+                        arrow = slide.shapes.add_shape(13, Inches(fx), Inches(fy), Inches(tx - fx), Inches(0.4))
+                        arrow.fill.solid()
+                        arrow.fill.fore_color.rgb = _hex_to_rgb(txt_hex)
 
             # Add Image if provided
             image_path = s_data.get("image_path")

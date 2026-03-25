@@ -415,8 +415,11 @@ class WebDevAgentApp(ctk.CTk):
             threading.Thread(target=self.execute_tool_and_resume, args=(agent, fn_name, args, generator), daemon=True).start()
         else:
             self.update_thinking_log(f"\n[USER REJECTED: {fn_name}]\n")
-            threading.Thread(target=self.process_agent_response, 
-                             args=(agent, "User rejected this tool execution.", [], generator), 
+            # Start a fresh turn — don't pass the exhausted old generator
+            rejection_parts = agent.prepare_message_parts(f"User rejected the tool call '{fn_name}'. Please suggest an alternative approach or ask the user what to do next.", [])
+            rejection_generator = agent.send_message_stream(rejection_parts)
+            threading.Thread(target=self.process_agent_response,
+                             args=(agent, None, [], rejection_generator),
                              daemon=True).start()
 
     def execute_tool_and_resume(self, agent, fn_name, args, generator):
