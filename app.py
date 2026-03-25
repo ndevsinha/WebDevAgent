@@ -442,7 +442,48 @@ class WebDevAgentApp(ctk.CTk):
     def process_agent_response_with_tool(self, agent, fn_name, result, generator):
         try:
             new_generator = agent.send_tool_response_stream(fn_name, result)
-            self.process_agent_response(agent, None, [], new_generator)
+            
+            # Track whether the model issued another tool call in this continuation
+            issued_tool_call = False
+            text_accumulated = ""
+
+            for event in new_generator:
+                etype = event.get('type')
+                if etype == 'text':
+                    text = event['content']
+                    text_accumulated += text
+                    self.after(0, self.append_to_chat, text)
+                    self.after(0, self.update_thinking_log, text)
+                elif etype == 'tool_call':
+                    issued_tool_call = True
+                    fn = event['name']
+                    args = event['args']
+                    self.after(0, self.show_approval_ui, agent, fn, args, new_generator)
+                    return
+                elif etype == 'error':
+                    error_msg = event.get('content', 'Unknown Error')
+                    self.after(0, self.append_to_chat, f"\n[Agent Error: {error_msg}]\n")
+                    self.after(0, self.update_thinking_log, f"\n[Error]: {error_msg}\n")
+
+            # If the model responded with only text and no new tool call,
+            # check if the task seems complete. If not, auto-prompt to continue.
+            if not issued_tool_call and text_accumulated:
+                done_keywords = ["application is ready", "complete", "done", "finished", "running", "launched", "all set", "browser"]
+                task_seems_done = any(kw in text_accumulated.lower() for kw in done_keywords)
+                
+                if not task_seems_done:
+                    # Auto-continue the task
+                    self.after(0, self.update_thinking_log, "\n[Auto-continuing task...]\n")
+                    continuation_parts = agent.prepare_message_parts("Continue building the application. What is the next step? Keep going until it is fully complete.", [])
+                    continuation_generator = agent.send_message_stream(continuation_parts)
+                    self.process_agent_response(agent, None, [], continuation_generator)
+                    return
+
+            self.after(0, self.append_to_chat, "\n\n")
+            self.after(0, self.update_thinking_log, "\n[Turn Completed]\n\n")
+            self.after(0, self.update_status, "Ready", False)
+            self.after(0, self.re_enable_input)
+
         except Exception as e:
             self.after(0, self.append_to_chat, f"\n[Tool Response Error: {str(e)}]\n")
             self.after(0, self.re_enable_input)
