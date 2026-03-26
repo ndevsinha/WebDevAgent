@@ -1,102 +1,111 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
+import Graph from './Graph';
 import './App.css';
-import MathGraph from './MathGraph';
 
 function App() {
-  const [equation, setEquation] = useState('x^2 + 2*x - 5');
+  const [equation, setEquation] = useState('sin(x) * x');
+  const [xMin, setXMin] = useState('-10');
+  const [xMax, setXMax] = useState('10');
+  const [step, setStep] = useState('0.1');
+  
   const [points, setPoints] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Range options
-  const [xMin, setXMin] = useState(-10);
-  const [xMax, setXMax] = useState(10);
-
-  const fetchPoints = async () => {
-    setLoading(true);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setError('');
+    setLoading(true);
+    
     try {
-      const response = await axios.post('http://127.0.0.1:8000/api/calculate/', {
-        equation: equation,
+      const response = await axios.post('http://localhost:8000/api/calculate/', {
+        equation,
         x_min: parseFloat(xMin),
         x_max: parseFloat(xMax),
+        step: parseFloat(step)
       });
-
+      
       if (response.data.status === 'success') {
         setPoints(response.data.points);
       } else {
-        setError(response.data.error || 'Unknown error');
+        setError(response.data.message);
       }
     } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Failed to connect to backend.');
+      setError('Failed to connect to the backend server.');
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    // Initial fetch
-    fetchPoints();
-  }, []);
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    fetchPoints();
   };
 
   return (
     <div className="App">
       <header className="App-header">
         <h1>Math Equation Visualizer</h1>
-        <p>Type any algebraic expression (e.g., x^3, sin(x), exp(x), x**2 + 5*x)</p>
       </header>
-      
-      <main>
-        <form onSubmit={handleSubmit} className="controls">
-          <div className="input-group">
-            <label>y = </label>
+      <main className="container">
+        <form onSubmit={handleSubmit} className="equation-form">
+          <div className="form-group">
+            <label htmlFor="equation">f(x) = </label>
             <input 
               type="text" 
-              value={equation}
+              id="equation" 
+              value={equation} 
               onChange={(e) => setEquation(e.target.value)}
-              placeholder="x^2"
-              required
+              placeholder="e.g. x**2 + 2*x"
+              required 
             />
           </div>
-          
-          <div className="input-group inline">
-            <label>x min:</label>
-            <input 
-              type="number" 
-              value={xMin}
-              onChange={(e) => setXMin(e.target.value)}
-              step="1"
-            />
+          <div className="form-row">
+            <div className="form-group small">
+              <label htmlFor="xMin">x Min</label>
+              <input 
+                type="number" 
+                id="xMin" 
+                value={xMin} 
+                onChange={(e) => setXMin(e.target.value)}
+                required 
+              />
+            </div>
+            <div className="form-group small">
+              <label htmlFor="xMax">x Max</label>
+              <input 
+                type="number" 
+                id="xMax" 
+                value={xMax} 
+                onChange={(e) => setXMax(e.target.value)}
+                required 
+              />
+            </div>
+            <div className="form-group small">
+              <label htmlFor="step">Step</label>
+              <input 
+                type="number" 
+                id="step" 
+                step="0.01"
+                min="0.01"
+                value={step} 
+                onChange={(e) => setStep(e.target.value)}
+                required 
+              />
+            </div>
           </div>
-          <div className="input-group inline">
-            <label>x max:</label>
-            <input 
-              type="number" 
-              value={xMax}
-              onChange={(e) => setXMax(e.target.value)}
-              step="1"
-            />
-          </div>
-          
           <button type="submit" disabled={loading}>
-            {loading ? 'Plotting...' : 'Plot'}
+            {loading ? 'Calculating...' : 'Plot Graph'}
           </button>
         </form>
-
-        {error && <div className="error-box">Error: {error}</div>}
-
-        <div className="graph-section">
-          {points.length > 0 ? (
-            <MathGraph points={points} />
-          ) : (
-            !loading && <p>No data to display.</p>
-          )}
+        
+        {error && <div className="error-message">{error}</div>}
+        
+        {points.length > 0 && <Graph points={points} />}
+        
+        <div className="tips">
+          <p><strong>Tips for writing equations:</strong></p>
+          <ul>
+            <li>Use <code>**</code> for exponents (e.g., <code>x**2</code> for x²)</li>
+            <li>Use <code>*</code> for multiplication (e.g., <code>2*x</code> instead of 2x)</li>
+            <li>Available functions: <code>sin(x)</code>, <code>cos(x)</code>, <code>tan(x)</code>, <code>exp(x)</code>, <code>log(x)</code></li>
+          </ul>
         </div>
       </main>
     </div>

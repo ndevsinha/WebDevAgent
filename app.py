@@ -21,10 +21,15 @@ def log_exception(exc_type, exc_value, exc_traceback):
 
 import sys
 sys.excepthook = log_exception
+import json
+import re
 
 # Basic setup for CustomTkinter
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
+
+PROJECTS_DIR = os.path.join(os.getcwd(), "projects")
+os.makedirs(PROJECTS_DIR, exist_ok=True)
 
 class WebDevAgentApp(ctk.CTk):
     def __init__(self):
@@ -54,10 +59,14 @@ class WebDevAgentApp(ctk.CTk):
         self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
 
         self.new_btn = ctk.CTkButton(self.sidebar_frame, text="+ New App", command=self.create_new_project)
-        self.new_btn.grid(row=1, column=0, padx=20, pady=10)
+        self.new_btn.grid(row=1, column=0, padx=20, pady=(10, 5))
+
+        self.open_btn = ctk.CTkButton(self.sidebar_frame, text="📂 Open Folder", fg_color="#4a4a4a", hover_color="#5a5a5a", command=self.open_existing_folder)
+        self.open_btn.grid(row=2, column=0, padx=20, pady=(5, 10))
 
         self.projects_scroll = ctk.CTkScrollableFrame(self.sidebar_frame, fg_color="transparent")
-        self.projects_scroll.grid(row=2, column=0, sticky="nsew", padx=10, pady=10)
+        self.projects_scroll.grid(row=3, column=0, sticky="nsew", padx=10, pady=10)
+        self.sidebar_frame.grid_rowconfigure(3, weight=1)
 
         # --- Main Chat Area ---
         self.chat_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -121,10 +130,17 @@ class WebDevAgentApp(ctk.CTk):
         self.status_label.pack(side="left", padx=20)
         
         self.progress_bar = ctk.CTkProgressBar(self.status_frame, orientation="horizontal", width=200, mode="indeterminate")
-        self.progress_bar.pack(side="right", padx=20, pady=5)
+        self.progress_bar.pack(side="right", padx=10, pady=5)
         
-        # Create the first default project
-        self.create_new_project(is_initial=True)
+        self.always_approve_cb = ctk.CTkCheckBox(self.status_frame, text="Always Approve", font=("Arial", 12), command=self._on_always_approve_toggle)
+        self.always_approve_cb.pack(side="right", padx=10)
+        
+        # Load existing projects from disk
+        self.load_all_projects()
+        
+        # Create a default project if none exist
+        if not self.projects:
+            self.create_new_project(is_initial=True)
 
     def create_new_project(self, is_initial=False):
         name = None
@@ -154,8 +170,94 @@ class WebDevAgentApp(ctk.CTk):
             "log": initial_log
         }
         
+        self.save_project(pid)
         self.render_project_list()
         self.switch_project(pid)
+
+    def open_existing_folder(self):
+        folder_path = filedialog.askdirectory(title="Select Existing Development Folder")
+        if not folder_path:
+            return
+            
+        name = os.path.basename(folder_path)
+        self.project_counter += 1
+        pid = f"proj_{self.project_counter}"
+        
+        agent = WebDevAgent()
+        agent.project_path = folder_path
+        
+        initial_log = f"System: Opened existing folder: {folder_path}\n"
+        initial_log += "System: Agent is analyzing the codebase...\n\n"
+        
+        self.projects[pid] = {
+            "name": name,
+            "agent": agent,
+            "log": initial_log,
+            "path": folder_path
+        }
+        
+        self.save_project(pid)
+        self.render_project_list()
+        self.switch_project(pid)
+        
+        # Guide the agent to analyze the folder
+        analysis_msg = f"I have opened the folder '{folder_path}'. Please analyze the project structure and tell me what you find, then ask how you can help proceed with development."
+        self.user_input.insert(0, analysis_msg)
+        self.send_message()
+
+    def save_project(self, pid):
+        if pid not in self.projects: return
+        data = self.projects[pid]
+        save_data = {
+            "name": data["name"],
+            "log": data["log"],
+            "path": data.get("path", os.getcwd()),
+            "history": data["agent"].get_history(),
+            "always_approve": self.always_approve_cb.get() if pid == self.current_project_id else data.get("always_approve", False)
+        }
+        file_path = os.path.join(PROJECTS_DIR, f"{pid}.json")
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(save_data, f, indent=2)
+        except Exception as e:
+            logging.error(f"Failed to save project {pid}: {e}")
+
+    def load_all_projects(self):
+        if not os.path.exists(PROJECTS_DIR): return
+        
+        files = [f for f in os.listdir(PROJECTS_DIR) if f.endswith(".json")]
+        for f in files:
+            pid = f.replace(".json", "")
+            try:
+                with open(os.path.join(PROJECTS_DIR, f), "r", encoding="utf-8") as jf:
+                    data = json.load(jf)
+                
+                agent = WebDevAgent()
+                agent.project_path = data.get("path", os.getcwd())
+                agent.set_history(data.get("history", []))
+                
+                self.projects[pid] = {
+                    "name": data["name"],
+                    "agent": agent,
+                    "log": data["log"],
+                    "path": data.get("path"),
+                    "always_approve": data.get("always_approve", False)
+                }
+                # Sync project counter
+                try:
+                    num = int(pid.split("_")[1])
+                    if num > self.project_counter:
+                        self.project_counter = num
+                except: pass
+                
+            except Exception as e:
+                logging.error(f"Failed to load project {f}: {e}")
+        
+        self.render_project_list()
+        if self.projects:
+            # Switch to the most recent one (last in dict)
+            last_pid = list(self.projects.keys())[-1]
+            self.switch_project(last_pid)
 
     def render_project_list(self):
         for btn in self.project_buttons:
@@ -174,6 +276,10 @@ class WebDevAgentApp(ctk.CTk):
         if not pid in self.projects:
             return
             
+        # Save previous project state before switching
+        if self.current_project_id and self.current_project_id != pid:
+            self.save_project(self.current_project_id)
+            
         self.current_project_id = pid
         self.render_project_list() # Re-render to update the highlighted button
         
@@ -187,7 +293,12 @@ class WebDevAgentApp(ctk.CTk):
         self.chat_history.insert("end", self.projects[pid]["log"])
         self.chat_history.configure(state="disabled")
         self.chat_history.see("end")
-        
+        # Restore always approve state
+        if self.projects[pid].get("always_approve"):
+            self.always_approve_cb.select()
+        else:
+            self.always_approve_cb.deselect()
+
         # Clear action center on switch
         self.clear_approval_area()
         self.update_thinking_log("System: Switched to " + self.projects[pid]["name"] + "\n")
@@ -202,6 +313,9 @@ class WebDevAgentApp(ctk.CTk):
             self.chat_history.insert("end", text)
             self.chat_history.configure(state="disabled")
             self.chat_history.see("end")
+            
+            # Save progress after adding text
+            self.save_project(self.current_project_id)
         except Exception:
             pass
 
@@ -293,6 +407,40 @@ class WebDevAgentApp(ctk.CTk):
             )
             delete_btn.pack(side="left", padx=(2, 0), pady=(0, 20)) # Shift it up slightly
 
+    def is_critical(self, fn_name, args):
+        """Determine if a tool call requires user approval."""
+        if self.always_approve_cb.get():
+            return False
+        
+        if fn_name == "run_command":
+            return True
+        if fn_name == "write_file":
+            path = args.get("path")
+            # Overwriting an existing file is critical; creating a new one is not.
+            if path and os.path.exists(path):
+                return True
+            return False
+        # Reading, listing, and UI tools are non-critical
+        return False
+
+    def _on_always_approve_toggle(self):
+        if self.current_project_id:
+            self.projects[self.current_project_id]["always_approve"] = self.always_approve_cb.get()
+            self.save_project(self.current_project_id)
+
+    def rename_project_async(self, pid, user_input, agent):
+        """Asynchronously generates a project name based on input and updates UI."""
+        new_name = agent.generate_topic_name(user_input)
+        if new_name and self.winfo_exists():
+            # Apply update on UI thread
+            self.after(0, lambda: self._apply_rename(pid, new_name))
+            
+    def _apply_rename(self, pid, new_name):
+        if pid in self.projects:
+            self.projects[pid]["name"] = new_name
+            self.render_project_list()
+            self.save_project(pid)
+
     def send_message(self):
         msg = self.user_input.get()
         if msg.strip() == "" and not self.attached_files:
@@ -315,9 +463,16 @@ class WebDevAgentApp(ctk.CTk):
         self.send_button.configure(state="disabled")
         self.upload_button.configure(state="disabled")
         
+        # Check if project needs automatic renaming (if it's the first message and has default name)
+        pid = self.current_project_id
+        active_agent = self.projects[pid]["agent"]
+        current_name = self.projects[pid]["name"]
+        
+        # If name is "App 1", "App 2", etc., rename based on first prompt
+        if msg and re.match(r"^App \d+$", current_name):
+             threading.Thread(target=self.rename_project_async, args=(pid, msg, active_agent), daemon=True).start()
+
         # Run agent response in a separate thread so GUI doesn't freeze
-        # Make sure to run it purely on the ACTIVE agent
-        active_agent = self.projects[self.current_project_id]["agent"]
         threading.Thread(target=self.process_agent_response, args=(active_agent, msg, files_to_send), daemon=True).start()
 
     def process_agent_response(self, agent, msg, files_to_send, stream_generator=None, continuation_count=0):
@@ -356,9 +511,18 @@ class WebDevAgentApp(ctk.CTk):
                 elif etype == 'tool_call':
                     fn_name = event['name']
                     args = event['args']
-                    # Pause the generator and show approval UI in Action Center
-                    self.after(0, self.show_approval_ui, agent, fn_name, args, generator, continuation_count)
-                    return # Exit this thread; handle_tool_decision will resume
+                    
+                    if self.is_critical(fn_name, args):
+                        # Pause and show approval UI
+                        self.after(0, self.show_approval_ui, agent, fn_name, args, generator, continuation_count)
+                        return 
+                    else:
+                        # Auto-approve and execute
+                        self.after(0, self.update_thinking_log, f"\n[AUTO-APPROVED: {fn_name}]\n")
+                        threading.Thread(target=self.execute_tool_and_resume, 
+                                         args=(agent, fn_name, args, generator, continuation_count), 
+                                         daemon=True).start()
+                        return
                 elif etype == 'error':
                     error_msg = event.get('content', 'Unknown Agent Error')
                     self.after(0, self.append_to_chat, f"\n[Agent Error: {error_msg}]\n")
@@ -370,6 +534,9 @@ class WebDevAgentApp(ctk.CTk):
             self.after(0, self.update_thinking_log, "\n[Turn Completed]\n\n")
             self.after(0, self.update_status, "Ready", False)
             self.after(0, self.re_enable_input)
+            
+            # Save state after completion
+            self.after(0, lambda: self.save_project(self.current_project_id))
             
         except Exception as e:
             logging.error(f"Stream Runtime Error: {traceback.format_exc()}")
@@ -461,6 +628,9 @@ class WebDevAgentApp(ctk.CTk):
             threading.Thread(target=self.process_agent_response,
                              args=(agent, None, [], rejection_generator, continuation_count),
                              daemon=True).start()
+        
+        # Save state after user decision
+        self.save_project(self.current_project_id)
 
     def execute_tool_and_resume(self, agent, fn_name, args, generator, continuation_count=0):
         self.after(0, self.update_status, "Executing Tool...", True)
@@ -473,8 +643,11 @@ class WebDevAgentApp(ctk.CTk):
             
             self.after(0, self.update_thinking_log, f"[Result]: {result[:200]}...\n")
             
+            # Save state after tool result is logged
+            self.save_project(self.current_project_id)
+            
             # Resume processing the response stream with the tool result
-            threading.Thread(target=self.process_agent_response_with_tool, 
+            threading.Thread(target=self.execute_tool_and_resume_resume, # Changed to internal helper
                              args=(agent, fn_name, result, generator, continuation_count), 
                              daemon=True).start()
         except Exception as e:
@@ -482,6 +655,10 @@ class WebDevAgentApp(ctk.CTk):
             self.after(0, self.append_to_chat, f"\n[Execution Error: {str(e)}]\n")
             self.after(0, self.update_status, "Error", False)
             self.after(0, self.re_enable_input)
+    
+    def execute_tool_and_resume_resume(self, agent, fn_name, result, generator, continuation_count):
+        # This is a helper to resume the response stream after the tool execution thread finishes
+        self.process_agent_response_with_tool(agent, fn_name, result, generator, continuation_count)
 
     def process_agent_response_with_tool(self, agent, fn_name, result, generator, continuation_count=0):
         try:
@@ -502,8 +679,16 @@ class WebDevAgentApp(ctk.CTk):
                     issued_tool_call = True
                     fn = event['name']
                     args = event['args']
-                    self.after(0, self.show_approval_ui, agent, fn, args, new_generator, continuation_count)
-                    return
+                    
+                    if self.is_critical(fn, args):
+                        self.after(0, self.show_approval_ui, agent, fn, args, new_generator, continuation_count)
+                        return
+                    else:
+                        self.after(0, self.update_thinking_log, f"\n[AUTO-APPROVED: {fn}]\n")
+                        threading.Thread(target=self.execute_tool_and_resume, 
+                                         args=(agent, fn, args, new_generator, continuation_count), 
+                                         daemon=True).start()
+                        return
                 elif etype == 'error':
                     error_msg = event.get('content', 'Unknown Error')
                     self.after(0, self.append_to_chat, f"\n[Agent Error: {error_msg}]\n")
@@ -528,6 +713,9 @@ class WebDevAgentApp(ctk.CTk):
             self.after(0, self.update_thinking_log, "\n[Turn Completed]\n\n")
             self.after(0, self.update_status, "Ready", False)
             self.after(0, self.re_enable_input)
+            
+            # Save state after completion
+            self.after(0, lambda: self.save_project(self.current_project_id))
 
         except Exception as e:
             self.after(0, self.append_to_chat, f"\n[Tool Response Error: {str(e)}]\n")

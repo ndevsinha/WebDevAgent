@@ -1,0 +1,39 @@
+2026-03-26 00:25:49,602 - ERROR - Tool Execution Error (run_command): Traceback (most recent call last):
+  File "C:\Users\Neeraj\OneDrive\Documents\autonomous agents\WebDevAgent\app.py", line 647, in execute_tool_and_resume
+    self.save_project(self.current_project_id)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Neeraj\OneDrive\Documents\autonomous agents\WebDevAgent\app.py", line 215, in save_project
+    "history": data["agent"].get_history(),
+               ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Neeraj\OneDrive\Documents\autonomous agents\WebDevAgent\agent.py", line 234, in get_history
+    res_dict = MessageToDict(part.function_response.response)
+  File "C:\Users\Neeraj\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\protobuf\json_format.py", line 162, in MessageToDict
+    return printer._MessageToJsonObject(message)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\Neeraj\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\protobuf\json_format.py", line 203, in _MessageToJsonObject
+    message_descriptor = message.DESCRIPTOR
+                         ^^^^^^^^^^^^^^^^^^
+AttributeError: 'MapComposite' object has no attribute 'DESCRIPTOR'
+
+2026-03-26 00:28:08,809 - ERROR - Tool Execution Error (run_command): Traceback (most recent call last):
+  File "C:\Users\Neeraj\OneDrive\Documents\autonomous agents\WebDevAgent\app.py", line 647, in execute_tool_and_resume
+    self.save_project(self.current_project_id)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Neeraj\OneDrive\Documents\autonomous agents\WebDevAgent\app.py", line 215, in save_project
+    "history": data["agent"].get_history(),
+               ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Neeraj\OneDrive\Documents\autonomous agents\WebDevAgent\agent.py", line 234, in get_history
+    res_dict = MessageToDict(part.function_response.response)
+  File "C:\Users\Neeraj\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\protobuf\json_format.py", line 162, in MessageToDict
+    return printer._MessageToJsonObject(message)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\Neeraj\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\protobuf\json_format.py", line 203, in _MessageToJsonObject
+    message_descriptor = message.DESCRIPTOR
+                         ^^^^^^^^^^^^^^^^^^
+AttributeError: 'MapComposite' object has no attribute 'DESCRIPTOR'
+
+2026-03-26 09:03:34,247 - ERROR - Failed to load project proj_1.json: type object 'Part' has no attribute 'from_function_call'
+2026-03-26 09:03:45,342 - ERROR - Failed to generate topic name: 404 Publisher Model `projects/theta-cable-182605/locations/us-central1/publishers/google/models/gemini-1.5-flash-002` was not found or your project does not have access to it. Please ensure you are using a valid model version. For more information, see: https://cloud.google.com/vertex-ai/generative-ai/docs/learn/model-versions
+2026-03-26 09:05:39,315 - ERROR - Failed to generate topic name: 404 Publisher Model `projects/theta-cable-182605/locations/us-central1/publishers/google/models/gemini-3-pro-preview` was not found or your project does not have access to it. Please ensure you are using a valid model version. For more information, see: https://cloud.google.com/vertex-ai/generative-ai/docs/learn/model-versions
+2026-03-26 09:18:20,071 - ERROR - Failed to generate topic name: 404 Publisher Model `projects/theta-cable-182605/locations/us-central1/publishers/google/models/gemini-3-pro-preview` was not found or your project does not have access to it. Please ensure you are using a valid model version. For more information, see: https://cloud.google.com/vertex-ai/generative-ai/docs/learn/model-versions
+2026-03-26 09:19:09,838 - ERROR - Failed to generate topic name: 404 Publisher Model `projects/theta-cable-182605/locations/us-central1/publishers/google/models/gemini-1.5-flash-002` was not found or your project does not have access to it. Please ensure you are using a valid model version. For more information, see: https://cloud.google.com/vertex-ai/generative-ai/docs/learn/model-versions
